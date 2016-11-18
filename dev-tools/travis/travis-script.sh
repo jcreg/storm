@@ -11,40 +11,35 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-PYTHON_VERSION_TO_FILE=`python -V > /tmp/python_version 2>&1`
-PYTHON_VERSION=`cat /tmp/python_version`
-RUBY_VERSION=`ruby -v`
-NODEJS_VERSION=`node -v`
-MVN_VERSION=`mvn -v`
-
-echo "Python version : $PYTHON_VERSION"
-echo "Ruby version : $RUBY_VERSION"
-echo "NodeJs version : $NODEJS_VERSION"
-echo "mvn version : $MVN_VERSION"
+echo "Python version :  " `python -V 2>&1`
+echo "Ruby version   :  " `ruby -v`
+echo "NodeJs version :  " `node -v`
+echo "Maven version  :  " `mvn -v`
 
 STORM_SRC_ROOT_DIR=$1
 
 TRAVIS_SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 cd ${STORM_SRC_ROOT_DIR}
+  
+if [ "$2" == "INTEGRATION-TEST" ]
+then
+  /bin/bash ./integration-test/run-it.sh
+else
+  # We should be concerned that Travis CI could be very slow because it uses VM
+  export STORM_TEST_TIMEOUT_MS=150000
+  # Travis only has 3GB of memory, lets use 1GB for build, and 1.5GB for forked JVMs
+  export MAVEN_OPTS="-Xmx1024m"
+  
+  mvn --batch-mode test -fae -Pnative,all-tests -Prat -pl "$2"
+  BUILD_RET_VAL=$?
+  
+  for dir in `find . -type d -and -wholename \*/target/\*-reports`;
+  do
+    echo "Looking for errors in ${dir}"
+    python ${TRAVIS_SCRIPT_DIR}/print-errors-from-test-reports.py "${dir}"
+  done
+  
+  exit ${BUILD_RET_VAL}
+fi
 
-# We should be concerned that Travis CI could be very slow because it uses VM
-export STORM_TEST_TIMEOUT_MS=150000
-
-# We now lean on Travis CI's implicit behavior, ```mvn clean install -DskipTests``` before running script
-mvn --batch-mode install -fae -Pnative
-BUILD_RET_VAL=$?
-
-for dir in `find . -type d -and -wholename \*/target/\*-reports`;
-do
-  echo "Looking for errors in ${dir}"
-  python ${TRAVIS_SCRIPT_DIR}/print-errors-from-test-reports.py "${dir}"
-done
-
-echo "Looking for unapproved licenses"
-for rat in `find . -name rat.txt`;
-do
-  python ${TRAVIS_SCRIPT_DIR}/ratprint.py "${rat}"
-done
-
-exit ${BUILD_RET_VAL}
